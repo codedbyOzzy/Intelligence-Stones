@@ -15,10 +15,127 @@ Together, they build something more complete.
 |-------|--------|----------------|
 | [**Mind Stone**](#-mind-stone) | `v1.2.0` ✅ | *How* the user communicates — style, depth, pace |
 | [**Echo Stone**](#-echo-stone) | `v1.0.0` ✅ | *Whether* the user actually understood |
-| **Bond Stone** | 🔒 in development | — |
-| **Intuition Stone** | 🔒 in development | — |
+| [**Bond Stone**](#bond-stone) | 🔒 in development | *Who* the user is — their world, context, history |
+| [**Intuition Stone**](#intuition-stone) | 🔒 in development | *Where* the conversation is going |
 
-Each stone operates independently. Each one makes the assistant measurably better at a specific dimension of human communication. The full picture emerges when they work together.
+---
+
+## How the stones fit together
+
+Most AI assistants fail at communication in four distinct ways.  
+Each stone addresses exactly one of them.
+
+```
+The problem                         The stone that solves it
+─────────────────────────────────   ──────────────────────────────────────
+The assistant speaks the same way   Mind Stone — learns your style,
+to everyone, regardless of who      depth preference, and pace. Adjusts
+you are or how you communicate.     the delivery to fit you specifically.
+
+The assistant never knows if its    Echo Stone — detects false
+explanation actually worked. It     confirmations, confusion patterns,
+moves on whether you understood     and cognitive overload. Knows the
+or not.                             difference between "got it" and
+                                    "got it" (but didn't).
+
+Every session starts from zero.     Bond Stone — builds a persistent
+You re-explain your project, your   knowledge graph of your world.
+stack, your constraints — every     Remembers without being told to
+single time.                        remember.
+
+The assistant only sees the         Intuition Stone — learns the shape
+current question. It has no idea    of conversations. Knows where this
+where the conversation is going.    is going before you finish asking.
+```
+
+### The feedback loop between Mind Stone and Echo Stone
+
+Mind Stone and Echo Stone are designed to work as a pair. Neither is complete without the other.
+
+**Mind Stone** adjusts *how* the assistant speaks — but it can't tell if those adjustments are actually helping. It observes signals like "too long" or "show me an example" and updates the style profile accordingly. What it cannot see is whether its calibrated responses are landing.
+
+**Echo Stone** fills that gap. It watches the turn *after* the assistant speaks and measures the reaction. A user who says "got it" and then asks the exact same question again didn't get it — and Echo Stone knows the difference. That feedback then shapes how the assistant explains in future turns.
+
+Together, they form a self-correcting communication loop:
+
+```
+Mind Stone calibrates the delivery
+         │
+         ▼
+  Assistant responds
+         │
+         ▼
+Echo Stone measures whether it worked
+         │
+         ├── understood → reinforces the approach
+         │
+         └── confused   → flags for adjustment next turn
+```
+
+Without Mind Stone, Echo Stone has nothing to improve upon.  
+Without Echo Stone, Mind Stone is adjusting blindly.
+
+### The full architecture — all four stones
+
+When all four stones are active, the assistant operates on four layers simultaneously:
+
+```
+  ┌──────────────────────────────────────────────────────────┐
+  │  Layer 1 — Expression  (released)                        │
+  │                                                          │
+  │  Mind Stone      How to speak to you                     │
+  │  Echo Stone      Whether it worked                       │
+  │                                                          │
+  │  Together: a delivery system that calibrates and         │
+  │  validates itself with every turn.                       │
+  ├──────────────────────────────────────────────────────────┤
+  │  Layer 2 — Context  (in development)                     │
+  │                                                          │
+  │  Bond Stone      Who you are — your world, projects,     │
+  │                  people, constraints, history            │
+  │                                                          │
+  │  Without this layer, every session starts from zero.     │
+  │  With it, the assistant already knows what you mean      │
+  │  when you say "the usual setup" or "that API problem".   │
+  ├──────────────────────────────────────────────────────────┤
+  │  Layer 3 — Prediction  (in development)                  │
+  │                                                          │
+  │  Intuition Stone Where this conversation is going        │
+  │                                                          │
+  │  Without this layer, the assistant answers the current   │
+  │  question. With it, the assistant is already preparing   │
+  │  the answer you haven't asked yet.                       │
+  └──────────────────────────────────────────────────────────┘
+```
+
+The complete picture — all four working together:
+
+```
+  User types a message
+       │
+       ├─ Intuition Stone  "I've seen this pattern before.
+       │                    They'll need X next."
+       │
+       ├─ Bond Stone       "They're working on the Vision project.
+       │                    They use Python + CUDA. Last time
+       │                    this came up, the issue was memory."
+       │
+       ├─ Mind Stone       "Keep it short. Lead with code.
+       │                    Skip the theory."
+       │
+       ▼
+  Assistant responds
+       │
+       ▼
+  Echo Stone             "They said 'ok' — but they asked
+                          the same thing three turns ago.
+                          This explanation isn't landing.
+                          Flag for next turn."
+```
+
+No magic. No large models. No embeddings.  
+Each stone is a small, auditable Python module running in microseconds.  
+The intelligence comes from careful observation accumulated over time.
 
 ---
 
@@ -66,9 +183,6 @@ Each conversation turn:
    Use domain terminology freely.
    Lead with a code example."
   ─────────────────────────────────────────
-         │
-         ▼ (injected into system prompt)
-  LLM call  →  calibrated response
 ```
 
 ### Profile dimensions
@@ -144,18 +258,19 @@ stone.reset()
 
 > *The assistant spoke. But did the user understand?*
 
-Analyses the user's reaction to each response and detects comprehension patterns that neither the user nor a standard AI would explicitly flag. Translates these patterns into a directive that shapes *how the assistant explains* — not just what it says.
+Analyses the user's reaction to each response and detects comprehension patterns that neither the user nor the assistant would explicitly flag. Translates these into a directive that shapes *how* the assistant explains — not just what it says.
 
-### The problem it solves
+### The problem
 
 ```
 Standard flow:
-  FRIDAY explains X  →  User says "ok got it"  →  FRIDAY moves on
+  Assistant explains X  →  User says "ok got it"  →  Assistant moves on
 
 What actually happened:
-  User says "ok got it"  →  30 seconds later: "wait, how does X work again?"
-                                                            ↑
-                                          Echo Stone caught this.
+  User says "ok got it"  →  Two minutes later: "wait, how does X work again?"
+                                                              ↑
+                                              Echo Stone caught this.
+                                              It's called a false confirmation.
 ```
 
 ### Detected patterns
@@ -165,7 +280,7 @@ What actually happened:
 | `explicit_confusion` | User directly says they didn't understand |
 | `overload_deflect` | Long response → 1–3 word reply (cognitive shutdown) |
 | `deepening` | User asks a deeper question — they understood and want more |
-| `rephrase` | User asks the same question in different words |
+| `rephrase` | User asks the same thing in different words |
 | `false_confirmation` | User confirms, then returns to the same topic |
 | `genuine_confirmation` | User confirms and moves to a genuinely different topic |
 
@@ -203,18 +318,17 @@ from echo_stone import EchoStone
 mind = MindStone()
 echo = EchoStone()
 
-def chat(user_message: str, assistant_message: str) -> None:
-    # One call each — that's all it takes
+def after_each_turn(user_message, assistant_message):
     mind.observe(user_message, assistant_message)
     echo.observe(user_message, assistant_message)
 
-def get_directives() -> str:
-    parts = []
+def build_system_prompt(base_prompt, user_message):
+    directives = []
     d = mind.get_style_directive()
-    if d: parts.append(d)
+    if d: directives.append(d)
     d = echo.get_comprehension_directive()
-    if d: parts.append(d)
-    return "\n\n".join(parts)
+    if d: directives.append(d)
+    return base_prompt + ("\n\n" + "\n\n".join(directives) if directives else "")
 ```
 
 ### API
@@ -229,7 +343,7 @@ def get_directives() -> str:
 | `min_confidence` | `0.12` | Threshold before directives activate (~8 turns) |
 | `save_every` | `5` | Persist to disk every N turns |
 | `rephrase_threshold` | `0.38` | Jaccard similarity for rephrase detection |
-| `overload_word_count` | `120` | Response word count that triggers overload check |
+| `overload_word_count` | `120` | Response length that triggers overload check |
 
 #### Methods
 
@@ -245,8 +359,8 @@ stone.reset()
 ```python
 {
   "signal":     str | None,   # detected comprehension signal
-  "is_confirm": bool,         # was this message a confirmation?
-  "profile":    { ... }       # same as summary()
+  "is_confirm": bool,
+  "profile":    { ... }
 }
 ```
 
@@ -260,7 +374,6 @@ Both stones ship with English signal sets. Any language is supported by passing 
 from mind_stone import MindStone, SignalConfig
 from echo_stone import EchoStone, EchoConfig
 
-# Example: German
 mind = MindStone(config=SignalConfig(
     neg_verbosity    = frozenset({"kurzer", "zu lang"}),
     pos_verbosity    = frozenset({"mehr details", "erklar mir"}),
@@ -274,54 +387,54 @@ mind = MindStone(config=SignalConfig(
 echo = EchoStone(config=EchoConfig(
     confusion_signals   = frozenset({"verstehe nicht", "nochmal", "was meinst du"}),
     confirmation_tokens = frozenset({"ok", "verstanden", "danke", "gut"}),
-    deepen_signals      = frozenset({"also wenn", "was ware wenn", "bedeutet das"}),
+    deepen_signals      = frozenset({"also wenn", "bedeutet das", "was ware wenn"}),
     normalise_fn        = None,
 ))
 ```
 
-For non-ASCII languages (Turkish, French, etc.) — provide a `normalise_fn` that strips diacritics.  
-See [`signals_turkish.py`](signals_turkish.py) for a complete reference implementation.
+For non-ASCII languages — provide a `normalise_fn` that strips diacritics.  
+See [`signals_turkish.py`](signals_turkish.py) for a complete reference implementation covering both stones.
 
 ---
 
 ## What's coming
 
-Two more stones are in development. They're not announced yet — but here's what they're designed to solve.
+### Bond Stone
 
----
+Right now, every session starts from zero. You mention "the Vision project" and the assistant has no idea what that is — even though you explained it three sessions ago. You say "the usual setup" and it asks you to clarify. You state your constraints once and then have to repeat them forever.
 
-**Bond Stone**
+Bond Stone solves this by building a persistent, structured model of the user's world — not as raw conversation logs, but as a live knowledge graph: entities, relationships, and context that accumulates across every session.
 
-Every conversation has context the user never restates: the project they're building, the person they mentioned two weeks ago, the constraint they explained once and assumed you'd remember.
-
-Bond Stone builds a persistent, structured model of the user's world — not as raw chat history, but as a live knowledge graph that every response can silently query.
+The difference between Bond Stone and simply saving chat history is the difference between a notebook and a map. Chat history stores what was said. Bond Stone builds what it means — who the people are, what the projects involve, how the pieces connect. When you say "same thing as before", it actually knows what that means.
 
 *In development.*
 
 ---
 
-**Intuition Stone**
+### Intuition Stone
 
-Experienced human assistants don't just answer the current question. They know where the conversation is going — and quietly prepare for it.
+A capable human assistant doesn't just answer the question in front of them. They recognise patterns. They know that when a developer asks *this kind of question*, they'll need *this* next — and they quietly prepare for it before being asked.
 
-Intuition Stone learns the shape of conversations: which questions lead to which follow-ups, which topics always resurface, what the user is actually trying to solve when they ask what they ask.
+Intuition Stone learns the shape of conversations. It tracks which questions tend to lead to which follow-ups, which topics always resurface, which paths a conversation typically takes once it starts down a certain road. Over time, it builds a model of where this specific user tends to go.
+
+This isn't about predicting the future. It's about recognising that most conversations follow familiar arcs — and that an assistant who has seen enough of them can stop waiting to be asked.
 
 *In development.*
 
 ---
 
-When all four stones are in place, the picture looks like this:
+### The complete picture
 
 ```
-Mind Stone      → the assistant speaks in a way that fits you
-Echo Stone      → the assistant knows whether it worked
-Bond Stone      → the assistant knows your world
-Intuition Stone → the assistant knows where you're going
-
-Together        → an assistant that genuinely understands you
+Mind Stone      →  the assistant speaks in a way that fits you
+Echo Stone      →  the assistant knows whether it worked
+Bond Stone      →  the assistant knows your world
+Intuition Stone →  the assistant knows where you're going
 ```
 
-No magic. No large models. No embeddings. Just careful observation, accumulated over time.
+Each stone adds one layer of genuine understanding that is currently missing from every AI assistant — not because the technology doesn't exist, but because no one has built it this way.
+
+Four modules. Zero dependencies. One JSON file per stone.
 
 ---
 
@@ -331,13 +444,19 @@ No magic. No large models. No embeddings. Just careful observation, accumulated 
 A simple counter weights day-1 behaviour forever. EMA ensures recent turns matter more — if preferences shift, the profile adapts within ~15 turns.
 
 **Why 0.12 as the default alpha for Mind Stone?**  
-At α=0.12, a single strong signal moves the profile ~12%. Stable enough to ignore one-off turns, fast enough to reflect genuine preference shifts.
+At α=0.12, a single strong signal moves the profile ~12%. Stable enough to ignore one-off turns, fast enough to reflect genuine shifts.
+
+**Why session-dampened EMA in Mind Stone?**  
+The first few turns of a new session often don't represent real preferences — the user may be rushed or testing something. Dampening alpha by 50% for the first 3 turns of a new session prevents one atypical session from overriding months of data.
 
 **Why Jaccard similarity for rephrase detection in Echo Stone?**  
-Zero-dependency constraint rules out embeddings. Jaccard on content words (stopwords removed) is fast, interpretable, and works well for the 4–8 word messages that typically trigger rephrase detection.
+Zero-dependency constraint rules out embeddings. Jaccard on content words (stopwords removed) is fast, interpretable, and accurate enough for the short messages that typically trigger rephrase detection.
+
+**Why check overload before confirmation in Echo Stone?**  
+A very short reply after a 120-word response signals cognitive shutdown regardless of the words used. Checking overload first prevents a one-word deflection from being misclassified as a confirmation.
 
 **Why not use embeddings or ML?**  
-Zero-dependency is a hard design constraint. Both stones run in microseconds, produce auditable profiles, and require no model downloads or API calls. The EMA approach is sufficient for the dimensions that matter.
+Zero-dependency is a hard design constraint. Both stones run in microseconds, produce auditable profiles, and require no model downloads or API calls. The signal-detection approach is sufficient — and more transparent.
 
 ---
 
@@ -346,7 +465,7 @@ Zero-dependency is a hard design constraint. Both stones run in microseconds, pr
 ```
 mind_stone.py          Mind Stone core module
 echo_stone.py          Echo Stone core module
-signals_turkish.py     Turkish signal sets (reference implementation for both stones)
+signals_turkish.py     Turkish signal sets for both stones
 example.py             Usage examples
 test_v11.py            Mind Stone v1.1 test suite (16 tests)
 test_v12.py            Mind Stone v1.2 test suite (30 tests)
