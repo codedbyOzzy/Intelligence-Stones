@@ -69,7 +69,57 @@ Echo Stone → checks if it worked
 
 Together: a self-correcting communication system
 
----
+
+## 🧠 Architecture
+
+        ┌───────────────────────────────┐
+        │        USER INPUT             │
+        └──────────────┬────────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │     Intuition Stone         │
+        │  (predict next intent)      │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │        Bond Stone           │
+        │   (context + memory)        │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │        Mind Stone           │
+        │   (how to respond)          │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │      AI RESPONSE            │
+        └──────────────┬──────────────┘
+                       │
+        ┌──────────────▼──────────────┐
+        │        Echo Stone           │
+        │   (did it work?)            │
+        └─────────────────────────────┘
+      
+      ---
+## 🔁 Self-Correcting Loop
+
+Mind Stone → adapts communication
+       ↓
+AI responds
+       ↓
+Echo Stone → evaluates understanding
+       ↓
+Adjust next response
+
+
+## 💥 Why this is different
+
+- 🧠 Learns how users think  
+- 🔁 Self-corrects every interaction  
+- ⚡ Runs in microseconds  
+- 📦 Zero dependencies  
+- 🔍 Fully transparent logic  
+      
 
 ## 🔥 Before vs After
 
