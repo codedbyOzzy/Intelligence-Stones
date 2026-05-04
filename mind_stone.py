@@ -58,20 +58,30 @@ v1.1 additions
   * Temporal directive: flags when user is active outside their typical hours
   * Backward-compatible with v1.0 profile files
 
+v1.2 additions
+--------------
+  * Thread-safe: all public methods protected by threading.Lock
+  * Correct type hint: normalise_fn is Optional[Callable[[str], str]]
+  * tech_amplifier parameter replaces the hardcoded *8 multiplier
+  * Satisfied-token threshold raised from 4 to 6 words
+  * follow_up_rate now factors in question markers (?, "why", "how", ...)
+    so "got it, but why?" is not counted as satisfied
+
 License: MIT
 """
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 import json
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -91,8 +101,9 @@ class SignalConfig:
     theory_signals   Phrases that mean "explain the why / theory"
     satisfied_tokens Short tokens that indicate the user is satisfied
     tech_words       Vocabulary that indicates technical expertise
-    normalise_fn     Optional callable to normalise text before signal matching
-                     (e.g. strip diacritics). Receives lowercase str, returns str.
+    normalise_fn     Optional callable: (str) -> str.
+                     Normalises text before signal matching (e.g. strip diacritics).
+                     Receives a lowercase string, must return a string.
     """
     neg_verbosity:    frozenset = field(default_factory=frozenset)
     pos_verbosity:    frozenset = field(default_factory=frozenset)
@@ -100,7 +111,7 @@ class SignalConfig:
     theory_signals:   frozenset = field(default_factory=frozenset)
     satisfied_tokens: frozenset = field(default_factory=frozenset)
     tech_words:       frozenset = field(default_factory=frozenset)
-    normalise_fn:     Optional[object] = None   # callable | None
+    normalise_fn:     Optional[Callable[[str], str]] = None
 
 
 # ── Default English signal sets ───────────────────────────────────────────────
@@ -166,6 +177,11 @@ EN_CONFIG = SignalConfig(
     normalise_fn     = None,
 )
 
+# Question words used by follow_up_rate to detect implicit follow-ups
+_QUESTION_WORDS = frozenset({
+    "what", "why", "how", "when", "where", "which", "who", "whose", "whom",
+})
+
 
 # ── Profile data structure ─────────────────────────────────────────────────────
 
@@ -216,6 +232,9 @@ class IntelligenceProfile:
 class MindStone:
     """Self-calibrating communication style engine.
 
+    Thread-safe: a single MindStone instance can be shared across threads
+    (e.g. in an async web framework) without data races. (v1.2)
+
     Parameters
     ----------
     path : Path | str
@@ -232,6 +251,10 @@ class MindStone:
     session_gap_minutes : int  [v1.1]
         Minutes of inactivity that mark the start of a new session.
         Default: 30. Set to 0 to disable session tracking.
+    tech_amplifier : float  [v1.2]
+        Multiplier applied to tech-word ratio when updating tech_depth.
+        Higher values make the profile more sensitive to technical vocabulary.
+        Default: 8.0.
     """
 
     # How many turns at session start use dampened alpha (v1.1)
@@ -245,6 +268,7 @@ class MindStone:
         min_confidence:      float        = 0.15,
         save_every:          int          = 5,
         session_gap_minutes: int          = 30,
+        tech_amplifier:      float        = 8.0,
     ) -> None:
         self._path              = Path(path)
         self._config            = config
@@ -252,11 +276,14 @@ class MindStone:
         self._min_conf          = min_confidence
         self._save_every        = save_every
         self._session_gap_sec   = session_gap_minutes * 60
+        self._tech_amplifier    = tech_amplifier
+        self._lock              = threading.Lock()   # v1.2: thread safety
         self.profile            = self._load()
 
     # ── Persistence ────────────────────────────────────────────────────────────
 
     def _load(self) -> IntelligenceProfile:
+        """Load profile from disk. Returns a fresh profile on any error."""
         if not self._path.exists():
             return IntelligenceProfile()
         try:
@@ -279,9 +306,11 @@ class MindStone:
             )
             return p
         except Exception:
+            # Corrupt or unreadable file: start fresh rather than crash
             return IntelligenceProfile()
 
     def _save(self) -> None:
+        """Write profile to disk. Called internally; lock must already be held."""
         try:
             self.profile.updated_at = time.time()
             self._path.write_text(
@@ -302,6 +331,7 @@ class MindStone:
         """Update the profile from one conversation turn.
 
         Call this after every user -> assistant exchange.
+        Thread-safe: safe to call concurrently from multiple threads. (v1.2)
 
         Parameters
         ----------
@@ -314,12 +344,21 @@ class MindStone:
         -------
         None by default. A dict when verbose=True:
             {
-              "session":  {"is_new": bool, "number": int, "turn": int},
-              "signals":  {"verbosity": ..., "tech_depth": ..., ...},
-              "alpha_used": float,
+              "session":  {"is_new": bool, "number": int, "turn": int, "alpha_used": float},
+              "signals":  {"verbosity": {...}, "tech_depth": {...}, ...},
               "profile":  summary dict,
             }
         """
+        with self._lock:
+            return self._observe_locked(user_message, assistant_message, verbose)
+
+    def _observe_locked(
+        self,
+        user_message:      str,
+        assistant_message: str,
+        verbose:           bool,
+    ) -> Optional[dict]:
+        """Inner observe logic. Must be called with self._lock held."""
         p   = self.profile
         cfg = self._config
         now = time.time()
@@ -351,7 +390,10 @@ class MindStone:
         # Normalise and lowercase for signal matching
         um = (user_message or "").strip().lower()
         if callable(cfg.normalise_fn):
-            um = cfg.normalise_fn(um)
+            try:
+                um = cfg.normalise_fn(um)
+            except Exception:
+                pass   # normalise failure: continue with unnormalised text
 
         um_words = set(re.findall(r"\w+", um))
 
@@ -365,10 +407,10 @@ class MindStone:
         verbosity_before = p.verbosity
 
         if _matches(um, um_words, cfg.neg_verbosity):
-            p.verbosity    = _ema(p.verbosity, 0.0, alpha=0.28)
+            p.verbosity      = _ema(p.verbosity, 0.0, alpha=0.28)
             verbosity_signal = "neg_explicit"
         elif _matches(um, um_words, cfg.pos_verbosity):
-            p.verbosity    = _ema(p.verbosity, 1.0, alpha=0.22)
+            p.verbosity      = _ema(p.verbosity, 1.0, alpha=0.22)
             verbosity_signal = "pos_explicit"
         else:
             wc             = len(um.split())
@@ -379,11 +421,11 @@ class MindStone:
         p.verbosity = _clamp(p.verbosity)
 
         # ── Technical depth ───────────────────────────────────────────────────
-        tech_ratio = 0.0
+        tech_ratio  = 0.0
         tech_before = p.tech_depth
         if um_words:
             tech_ratio  = len(um_words & cfg.tech_words) / max(len(um_words), 1)
-            tech_signal = min(1.0, tech_ratio * 8)
+            tech_signal = min(1.0, tech_ratio * self._tech_amplifier)   # v1.2: configurable
             p.tech_depth = _ema(p.tech_depth, tech_signal, alpha=effective_alpha)
             p.tech_depth = _clamp(p.tech_depth)
 
@@ -398,13 +440,17 @@ class MindStone:
             example_signal = "theory"
         p.example_bias = _clamp(p.example_bias)
 
-        # ── Satisfaction rate ─────────────────────────────────────────────────
+        # ── Satisfaction / follow-up rate ─────────────────────────────────────
+        # v1.2: threshold raised 4→6 words; question detection added so
+        # "got it, but why?" is not counted as satisfied.
         sat_before  = p.follow_up_rate
         wc          = len(um.split())
-        is_satisfied = wc <= 4 and bool(um_words & cfg.satisfied_tokens)
+        has_satisfied_token = bool(um_words & cfg.satisfied_tokens)
+        is_question = um.endswith("?") or bool(um_words & _QUESTION_WORDS)
+        is_satisfied = wc <= 6 and has_satisfied_token and not is_question
         p.follow_up_rate = _ema(
             p.follow_up_rate,
-            1.0 if is_satisfied else 0.0,
+            0.0 if is_satisfied else 1.0,
             alpha=effective_alpha,
         )
         p.follow_up_rate = _clamp(p.follow_up_rate)
@@ -417,10 +463,10 @@ class MindStone:
         if verbose:
             return {
                 "session": {
-                    "is_new":       is_new_session,
-                    "number":       p.session_count,
-                    "turn":         p.current_session_turns,
-                    "alpha_used":   round(effective_alpha, 4),
+                    "is_new":     is_new_session,
+                    "number":     p.session_count,
+                    "turn":       p.current_session_turns,
+                    "alpha_used": round(effective_alpha, 4),
                 },
                 "signals": {
                     "verbosity": {
@@ -442,13 +488,14 @@ class MindStone:
                         "delta":  round(p.example_bias - example_before, 4),
                     },
                     "follow_up_rate": {
-                        "satisfied": is_satisfied,
-                        "before":    round(sat_before, 4),
-                        "after":     round(p.follow_up_rate, 4),
-                        "delta":     round(p.follow_up_rate - sat_before, 4),
+                        "satisfied":   is_satisfied,
+                        "is_question": is_question,
+                        "before":      round(sat_before, 4),
+                        "after":       round(p.follow_up_rate, 4),
+                        "delta":       round(p.follow_up_rate - sat_before, 4),
                     },
                 },
-                "profile": self.summary(),
+                "profile": self._summary_locked(),
             }
         return None
 
@@ -457,77 +504,84 @@ class MindStone:
 
         Returns "" until enough data has been observed. When non-empty,
         append this to your system prompt before each LLM call.
+        Thread-safe. (v1.2)
 
         v1.1: includes a temporal note when the user is active outside
         their established peak hours (requires confidence >= 50%).
         """
-        p = self.profile
-        if p.confidence() < self._min_conf:
-            return ""
+        with self._lock:
+            p = self.profile
+            if p.confidence() < self._min_conf:
+                return ""
 
-        conf  = p.confidence()
-        lines: list[str] = []
+            conf  = p.confidence()
+            lines: list[str] = []
 
-        # Verbosity
-        if p.verbosity < 0.30:
-            lines.append(
-                "This user prefers concise, to-the-point answers -- "
-                "skip preamble and keep responses tight."
-            )
-        elif p.verbosity > 0.70:
-            lines.append(
-                "This user appreciates detailed explanations -- "
-                "feel free to elaborate when it adds value."
-            )
-
-        # Technical depth
-        if conf > 0.30:
-            if p.tech_depth > 0.72:
+            # Verbosity
+            if p.verbosity < 0.30:
                 lines.append(
-                    "The user is technically proficient -- "
-                    "use domain terminology without over-explaining basics."
+                    "This user prefers concise, to-the-point answers -- "
+                    "skip preamble and keep responses tight."
                 )
-            elif p.tech_depth < 0.28:
+            elif p.verbosity > 0.70:
                 lines.append(
-                    "Prefer plain language over jargon; "
-                    "explain technical terms when they are unavoidable."
+                    "This user appreciates detailed explanations -- "
+                    "feel free to elaborate when it adds value."
                 )
 
-        # Example vs theory
-        if conf > 0.25:
-            if p.example_bias > 0.68:
+            # Technical depth
+            if conf > 0.30:
+                if p.tech_depth > 0.72:
+                    lines.append(
+                        "The user is technically proficient -- "
+                        "use domain terminology without over-explaining basics."
+                    )
+                elif p.tech_depth < 0.28:
+                    lines.append(
+                        "Prefer plain language over jargon; "
+                        "explain technical terms when they are unavoidable."
+                    )
+
+            # Example vs theory
+            if conf > 0.25:
+                if p.example_bias > 0.68:
+                    lines.append(
+                        "Where possible, lead with a concrete example or code snippet."
+                    )
+                elif p.example_bias < 0.32:
+                    lines.append(
+                        "Lead with the concept or reasoning; add examples only if needed."
+                    )
+
+            # Low satisfaction -> anticipate the follow-up
+            if conf > 0.40 and p.follow_up_rate < 0.30:
                 lines.append(
-                    "Where possible, lead with a concrete example or code snippet."
-                )
-            elif p.example_bias < 0.32:
-                lines.append(
-                    "Lead with the concept or reasoning; add examples only if needed."
+                    "This user often asks follow-up questions -- "
+                    "aim for completeness and briefly anticipate the obvious next question."
                 )
 
-        # Low satisfaction -> anticipate the follow-up
-        if conf > 0.40 and p.follow_up_rate < 0.30:
-            lines.append(
-                "This user often asks follow-up questions -- "
-                "aim for completeness and briefly anticipate the obvious next question."
-            )
+            # Temporal note (v1.1): active outside established peak hours?
+            if conf >= 0.50 and p.peak_hours:
+                current_hour = datetime.now().hour
+                if current_hour not in p.peak_hours:
+                    lines.append(
+                        "The user is active outside their typical hours -- "
+                        "keep responses direct and avoid unnecessary elaboration."
+                    )
 
-        # Temporal note (v1.1): active outside established peak hours?
-        if conf >= 0.50 and p.peak_hours:
-            current_hour = datetime.now().hour
-            if current_hour not in p.peak_hours:
-                lines.append(
-                    "The user is active outside their typical hours -- "
-                    "keep responses direct and avoid unnecessary elaboration."
-                )
+            if not lines:
+                return ""
 
-        if not lines:
-            return ""
-
-        header = "[Adaptive style -- internal directive, do not repeat this to the user]\n"
-        return header + "\n".join(f"* {l}" for l in lines)
+            header = "[Adaptive style -- internal directive, do not repeat this to the user]\n"
+            return header + "\n".join(f"* {l}" for l in lines)
 
     def summary(self) -> dict:
-        """Human-readable profile summary."""
+        """Human-readable profile summary. Thread-safe. (v1.2)"""
+        with self._lock:
+            return self._summary_locked()
+
+    def _summary_locked(self) -> dict:
+        """Inner summary logic. Must be called with self._lock held."""
         p = self.profile
         return {
             "version":           __version__,
@@ -542,27 +596,29 @@ class MindStone:
         }
 
     def session_summary(self) -> dict:
-        """Statistics for the current session only. (v1.1)"""
-        p   = self.profile
-        now = time.time()
-        if p.last_observe_ts > 0 and p.current_session_turns > 0:
-            session_age_min = round((now - p.last_observe_ts) / 60, 1)
-        else:
-            session_age_min = 0.0
+        """Statistics for the current session only. Thread-safe. (v1.1/v1.2)"""
+        with self._lock:
+            p   = self.profile
+            now = time.time()
+            if p.last_observe_ts > 0 and p.current_session_turns > 0:
+                session_age_min = round((now - p.last_observe_ts) / 60, 1)
+            else:
+                session_age_min = 0.0
 
-        return {
-            "session_number":         p.session_count,
-            "current_session_turns":  p.current_session_turns,
-            "minutes_since_last_turn": session_age_min,
-            "total_sessions":         p.session_count,
-            "total_turns_all_time":   p.total_turns,
-        }
+            return {
+                "session_number":          p.session_count,
+                "current_session_turns":   p.current_session_turns,
+                "minutes_since_last_turn": session_age_min,
+                "total_sessions":          p.session_count,
+                "total_turns_all_time":    p.total_turns,
+            }
 
     def reset(self) -> None:
-        """Clear the profile and delete the saved file."""
-        self.profile = IntelligenceProfile()
-        if self._path.exists():
-            self._path.unlink()
+        """Clear the profile and delete the saved file. Thread-safe. (v1.2)"""
+        with self._lock:
+            self.profile = IntelligenceProfile()
+            if self._path.exists():
+                self._path.unlink()
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────

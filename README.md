@@ -173,6 +173,7 @@ For languages with non-ASCII characters (Turkish, French, etc.) — provide a `n
 | `min_confidence` | `0.15` | Confidence threshold before directives activate |
 | `save_every` | `5` | Persist to disk every N turns |
 | `session_gap_minutes` | `30` | Gap (minutes) that marks a new session boundary; `0` disables |
+| `tech_amplifier` | `8.0` | Multiplier on tech-word ratio; higher = more sensitive to technical vocabulary |
 
 ### Methods
 
@@ -258,6 +259,15 @@ Zero-dependency is a design goal. The EMA approach works well for the 4–6 dime
 
 ## Changelog
 
+### v1.2.0
+- **Thread-safe** — all public methods (`observe`, `get_style_directive`, `summary`, `session_summary`, `reset`) are protected by `threading.Lock`. Safe to share a single instance across threads (e.g. async web servers).
+- **Correct type hint** — `normalise_fn` is now typed as `Optional[Callable[[str], str]]` instead of `Optional[object]`
+- **`tech_amplifier` parameter** — replaces the hardcoded `*8` multiplier; tune sensitivity to technical vocabulary per use-case (`MindStone(tech_amplifier=5.0)`)
+- **Satisfied threshold raised** — `wc <= 4` raised to `wc <= 6`; "got it that was perfect" now correctly registers as satisfied
+- **Question detection** — `follow_up_rate` now checks for `?` and question words (`why`, `how`, `what`, …); "got it, but why?" is no longer counted as satisfied
+- **`normalise_fn` fault tolerance** — exceptions raised by `normalise_fn` are caught; observation continues with unnormalised text instead of crashing
+- Added `test_v12.py`: 30 functional tests covering all v1.2 fixes plus edge cases (corrupt JSON, I/O error on save, 500-turn drift, concurrent writes, `normalise_fn` exception)
+
 ### v1.1.0
 - **Session awareness** — automatic session boundary detection (`session_gap_minutes` parameter)
 - **Session-dampened EMA** — alpha halved for the first 3 turns of a new session to prevent atypical sessions from corrupting long-term profiles
@@ -282,6 +292,7 @@ mind_stone.py          core module — copy this into your project
 signals_turkish.py     Turkish signal sets (reference implementation)
 example.py             basic, v1.1, OpenAI, and Turkish usage examples
 test_v11.py            v1.1 functional test suite (16 tests)
+test_v12.py            v1.2 functional test suite (30 tests)
 ```
 
 ---
