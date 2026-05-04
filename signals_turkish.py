@@ -1,19 +1,22 @@
 """
-Turkish signal sets for Mind Stone.
+Turkish signal sets for Mind Stone and Echo Stone.
 
 Usage
 -----
     from mind_stone import MindStone
-    from signals_turkish import TR_CONFIG
+    from echo_stone import EchoStone
+    from signals_turkish import TR_CONFIG, TR_ECHO_CONFIG
 
-    stone = MindStone(config=TR_CONFIG)
+    mind = MindStone(config=TR_CONFIG)
+    echo = EchoStone(config=TR_ECHO_CONFIG)
 
 Note: All signal strings are stored in ASCII (diacritics stripped) because
-the MindStone engine normalises user input via ``TR_CONFIG.normalise_fn``
-before matching. This avoids encoding mismatches on Windows terminals.
+both engines normalise user input via the ``normalise_fn`` before matching.
+This avoids encoding mismatches on Windows terminals.
 """
 
 from mind_stone import SignalConfig
+from echo_stone import EchoConfig
 
 # ── Normalisation ─────────────────────────────────────────────────────────────
 
@@ -31,7 +34,7 @@ def _norm_tr(text: str) -> str:
     return text.translate(_TR_MAP)
 
 
-# ── Signal sets (all ASCII after normalisation) ───────────────────────────────
+# ── Mind Stone signal sets (all ASCII after normalisation) ────────────────────
 
 _TR_NEG_VERBOSITY = frozenset({
     "kisalt", "kisa tut", "kisa kes", "cok uzun", "uzun oldu",
@@ -79,8 +82,6 @@ _TR_TECH_WORDS = frozenset({
     "algoritma", "bellek", "islemci", "hata", "debug", "test",
 })
 
-# ── Config object ─────────────────────────────────────────────────────────────
-
 TR_CONFIG = SignalConfig(
     neg_verbosity    = _TR_NEG_VERBOSITY,
     pos_verbosity    = _TR_POS_VERBOSITY,
@@ -89,4 +90,42 @@ TR_CONFIG = SignalConfig(
     satisfied_tokens = _TR_SATISFIED_TOKENS,
     tech_words       = _TR_TECH_WORDS,
     normalise_fn     = _norm_tr,
+)
+
+
+# ── Echo Stone signal sets ────────────────────────────────────────────────────
+
+_TR_ECHO_CONFUSION = frozenset({
+    # Explicit confusion
+    "anlamadim", "anlayamadim", "anlasilmadi", "anlamiyorum",
+    "tekrar", "tekrar anlatir misin", "tekrar aciklar misin",
+    "baska turlu", "farkli anlatir misin", "daha basit",
+    "ne demek", "ne anlama geliyor", "kafam karisti",
+    "nasil yani", "yani ne", "ne demeye calisiyor",
+    # Implicit confusion
+    "peki ama", "ama nasil", "ama neden",
+})
+
+_TR_ECHO_CONFIRM = frozenset({
+    "tamam", "anladim", "ok", "oldu", "tamamdir", "tmm",
+    "peki", "guzel", "super", "harika", "anlasild",
+    "mantikli", "evet", "yes", "iyi", "sag ol",
+})
+
+_TR_ECHO_DEEPEN = frozenset({
+    # Building on the answer
+    "peki ya", "ya da", "bir de", "ya su durumda",
+    "yani demek ki", "demek ki", "o zaman",
+    "su anlama mi geliyor", "soyle mi anlayacagiz",
+    "bu da mi", "bu durum icin de", "benzer sekilde",
+    "daha ileri gidersek", "daha da",
+    "onu da sorayim", "bir sorum daha",
+    "peki o zaman", "o halde",
+})
+
+TR_ECHO_CONFIG = EchoConfig(
+    confusion_signals   = _TR_ECHO_CONFUSION,
+    confirmation_tokens = _TR_ECHO_CONFIRM,
+    deepen_signals      = _TR_ECHO_DEEPEN,
+    normalise_fn        = _norm_tr,
 )

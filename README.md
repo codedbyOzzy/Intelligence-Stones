@@ -1,24 +1,34 @@
-# 🧠 Mind Stone — Adaptive Intelligence Profile
+# Intelligence Stones
 
-> *"Most AI assistants know **what** to say. Mind Stone teaches them **how** to say it — for you, specifically."*
+> *"Most AI assistants know what to say. These teach them how to say it — and whether it actually landed."*
 
-A lightweight, zero-dependency module that silently observes every conversation turn and builds a quantified model of how a user communicates. It then generates a short style directive that shapes the AI assistant's tone, depth, and format — without the user ever configuring anything.
+A growing collection of lightweight, zero-dependency Python modules that give AI assistants genuine understanding of the people they talk to.
 
----
-
-## The problem it solves
-
-Every person communicates differently:
-
-- **Alex** sends three-word messages and gets frustrated by long answers
-- **Sam** asks "why?" after every reply and wants theory before examples  
-- **Jordan** pastes GPU code and expects expert-level responses without explanation
-
-Standard AI assistants treat them all the same. Mind Stone doesn't.
+Each stone is a standalone drop-in. No framework. No configuration. No external dependencies.  
+Together, they build something more complete.
 
 ---
 
-## How it works
+## The Collection
+
+| Stone | Status | What it learns |
+|-------|--------|----------------|
+| [**Mind Stone**](#-mind-stone) | `v1.2.0` ✅ | *How* the user communicates — style, depth, pace |
+| [**Echo Stone**](#-echo-stone) | `v1.0.0` ✅ | *Whether* the user actually understood |
+| **Bond Stone** | 🔒 in development | — |
+| **Intuition Stone** | 🔒 in development | — |
+
+Each stone operates independently. Each one makes the assistant measurably better at a specific dimension of human communication. The full picture emerges when they work together.
+
+---
+
+## 🧠 Mind Stone
+
+> *The user's communication fingerprint — learned silently, applied automatically.*
+
+Observes every conversation turn and builds a quantified model of how a user communicates. Generates a short style directive injected into the system prompt — shaping tone, depth, and format without the user ever configuring anything.
+
+### How it works
 
 ```
 Each conversation turn:
@@ -44,18 +54,18 @@ Each conversation turn:
   │                                 │
   │  verbosity:      0.21  (terse)  │
   │  tech_depth:     0.87  (expert) │
-  │  example_bias:   0.74  (←examp) │
+  │  example_bias:   0.74  (examp.) │
   │  follow_up_rate: 0.62           │
   │  confidence:     68%            │
   └──────────────┬──────────────────┘
                  │
                  ▼
   get_style_directive()
-  ──────────────────────────────────────
+  ─────────────────────────────────────────
   "This user prefers concise answers.
    Use domain terminology freely.
    Lead with a code example."
-  ──────────────────────────────────────
+  ─────────────────────────────────────────
          │
          ▼ (injected into system prompt)
   LLM call  →  calibrated response
@@ -63,236 +73,283 @@ Each conversation turn:
 
 ### Profile dimensions
 
-| Dimension | Low (0) | High (1) | How it's learned |
-|-----------|---------|----------|-----------------|
-| `verbosity` | Terse, direct | Detailed, thorough | Explicit signals ("shorter", "elaborate") + message length |
-| `tech_depth` | Plain language | Expert vocabulary | Technical word density in user messages |
+| Dimension | Low (0) | High (1) | Learned from |
+|-----------|---------|----------|-------------|
+| `verbosity` | Terse, direct | Detailed, thorough | Explicit signals + message length |
+| `tech_depth` | Plain language | Expert vocabulary | Technical word density |
 | `example_bias` | Theory first | Examples first | "show me" / "why does it" signals |
-| `follow_up_rate` | Satisfied by first reply | Always asks more | Short positive replies vs long follow-ups |
+| `follow_up_rate` | Satisfied by first reply | Always asks more | Short confirmations vs long follow-ups |
 
 ### Learning curve
 
 ```
-Turns:     0    5   12   25   40   55+
-Confidence: 0%  0% 14%  40%  70% 100%
-Directive:  ─── ─── ON  ─── ─── ───▶
+Turns:      0    5   12   25   40   55+
+Confidence: 0%  0%  14%  40%  70% 100%
+Directive:  ───────── ON ──────────────▶
 ```
 
-Style directives activate at ~12 turns. Full calibration takes ~55 turns of natural conversation.
-
----
-
-## Quick start
-
-No installation required — just copy `mind_stone.py` into your project.
+### Quick start
 
 ```python
 from mind_stone import MindStone
 
-stone = MindStone()   # loads .mind_stone.json if it exists
+stone = MindStone()
 
 # After every conversation turn:
 stone.observe(user_message, assistant_message)
 
 # Before every LLM call:
-directive = stone.get_style_directive()   # "" until enough data
+directive = stone.get_style_directive()   # "" until ~12 turns
 if directive:
     system_prompt += "\n\n" + directive
 ```
 
----
+### API
 
-## OpenAI integration
+#### `MindStone(path, config, ema_alpha, min_confidence, save_every, session_gap_minutes, tech_amplifier)`
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | `.mind_stone.json` | Profile persistence path |
+| `config` | `EN_CONFIG` | Language signal sets |
+| `ema_alpha` | `0.12` | Learning rate |
+| `min_confidence` | `0.15` | Threshold before directives activate (~12 turns) |
+| `save_every` | `5` | Persist to disk every N turns |
+| `session_gap_minutes` | `30` | Gap that marks a new session boundary |
+| `tech_amplifier` | `8.0` | Sensitivity to technical vocabulary |
+
+#### Methods
 
 ```python
-from openai import OpenAI
+stone.observe(user_message, assistant_message, verbose=False)
+stone.get_style_directive() -> str
+stone.summary()             -> dict
+stone.session_summary()     -> dict
+stone.reset()
+```
+
+#### `observe(verbose=True)` report
+
+```python
+{
+  "session":  {"is_new": bool, "number": int, "turn": int, "alpha_used": float},
+  "signals":  {"verbosity": {...}, "tech_depth": {...}, ...},
+  "profile":  { ... }
+}
+```
+
+---
+
+## 📡 Echo Stone
+
+> *The assistant spoke. But did the user understand?*
+
+Analyses the user's reaction to each response and detects comprehension patterns that neither the user nor a standard AI would explicitly flag. Translates these patterns into a directive that shapes *how the assistant explains* — not just what it says.
+
+### The problem it solves
+
+```
+Standard flow:
+  FRIDAY explains X  →  User says "ok got it"  →  FRIDAY moves on
+
+What actually happened:
+  User says "ok got it"  →  30 seconds later: "wait, how does X work again?"
+                                                            ↑
+                                          Echo Stone caught this.
+```
+
+### Detected patterns
+
+| Signal | What happened |
+|--------|--------------|
+| `explicit_confusion` | User directly says they didn't understand |
+| `overload_deflect` | Long response → 1–3 word reply (cognitive shutdown) |
+| `deepening` | User asks a deeper question — they understood and want more |
+| `rephrase` | User asks the same question in different words |
+| `false_confirmation` | User confirms, then returns to the same topic |
+| `genuine_confirmation` | User confirms and moves to a genuinely different topic |
+
+### Comprehension profile
+
+| Dimension | Low (0) | High (1) |
+|-----------|---------|----------|
+| `comprehension_rate` | Rarely understands first try | Always gets it first try |
+| `false_confirm_rate` | Confirmations are genuine | Often confirms without understanding |
+| `overload_rate` | Handles complexity well | Easily overwhelmed by long responses |
+| `depth_rate` | Stays surface level | Digs deeper every time |
+
+### Quick start
+
+```python
+from echo_stone import EchoStone
+
+stone = EchoStone()
+
+# Same interface as Mind Stone:
+stone.observe(user_message, assistant_message)
+
+# Before every LLM call:
+directive = stone.get_comprehension_directive()   # "" until ~8 turns
+if directive:
+    system_prompt += "\n\n" + directive
+```
+
+### Running both stones together
+
+```python
 from mind_stone import MindStone
+from echo_stone import EchoStone
 
-client = OpenAI()
-stone  = MindStone()
+mind = MindStone()
+echo = EchoStone()
 
-BASE_PROMPT = "You are a helpful assistant."
-history     = []
+def chat(user_message: str, assistant_message: str) -> None:
+    # One call each — that's all it takes
+    mind.observe(user_message, assistant_message)
+    echo.observe(user_message, assistant_message)
 
-def chat(user_message: str) -> str:
-    # 1. Inject adaptive style directive
-    system = BASE_PROMPT
-    directive = stone.get_style_directive()
-    if directive:
-        system += "\n\n" + directive
+def get_directives() -> str:
+    parts = []
+    d = mind.get_style_directive()
+    if d: parts.append(d)
+    d = echo.get_comprehension_directive()
+    if d: parts.append(d)
+    return "\n\n".join(parts)
+```
 
-    # 2. Call LLM
-    messages = [{"role": "system", "content": system}] + history
-    messages.append({"role": "user", "content": user_message})
-    response = client.chat.completions.create(model="gpt-4o-mini", messages=messages)
-    reply = response.choices[0].message.content
+### API
 
-    # 3. Update history and observe
-    history.append({"role": "user",      "content": user_message})
-    history.append({"role": "assistant", "content": reply})
-    stone.observe(user_message, reply)   # ← one line to learn
+#### `EchoStone(path, config, ema_alpha, min_confidence, save_every, rephrase_threshold, overload_word_count)`
 
-    return reply
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `path` | `.echo_stone.json` | Profile persistence path |
+| `config` | `EN_CONFIG` | Language signal sets |
+| `ema_alpha` | `0.15` | Learning rate |
+| `min_confidence` | `0.12` | Threshold before directives activate (~8 turns) |
+| `save_every` | `5` | Persist to disk every N turns |
+| `rephrase_threshold` | `0.38` | Jaccard similarity for rephrase detection |
+| `overload_word_count` | `120` | Response word count that triggers overload check |
+
+#### Methods
+
+```python
+stone.observe(user_message, assistant_message, verbose=False)
+stone.get_comprehension_directive() -> str
+stone.summary()                     -> dict
+stone.reset()
+```
+
+#### `observe(verbose=True)` report
+
+```python
+{
+  "signal":     str | None,   # detected comprehension signal
+  "is_confirm": bool,         # was this message a confirmation?
+  "profile":    { ... }       # same as summary()
+}
 ```
 
 ---
 
 ## Language customisation
 
-Mind Stone ships with English signals. Use another language by passing a `SignalConfig`:
+Both stones ship with English signal sets. Any language is supported by passing a config object:
 
 ```python
 from mind_stone import MindStone, SignalConfig
+from echo_stone import EchoStone, EchoConfig
 
-MY_CONFIG = SignalConfig(
-    neg_verbosity    = frozenset({"kurzer", "zu lang", "fass dich"}),       # German: shorter
-    pos_verbosity    = frozenset({"mehr details", "erklar mir", "weiter"}),  # German: more
-    example_signals  = frozenset({"beispiel", "zeig mir", "code"}),
-    theory_signals   = frozenset({"warum", "wie funktioniert", "erklare"}),
-    satisfied_tokens = frozenset({"ok", "danke", "verstanden", "gut"}),
-    tech_words       = frozenset({"python", "api", "docker", "gpu"}),
-    normalise_fn     = None,   # German uses ASCII — no normalisation needed
-)
+# Example: German
+mind = MindStone(config=SignalConfig(
+    neg_verbosity    = frozenset({"kurzer", "zu lang"}),
+    pos_verbosity    = frozenset({"mehr details", "erklar mir"}),
+    example_signals  = frozenset({"beispiel", "zeig mir"}),
+    theory_signals   = frozenset({"warum", "wie funktioniert"}),
+    satisfied_tokens = frozenset({"ok", "danke", "verstanden"}),
+    tech_words       = frozenset({"python", "api", "docker"}),
+    normalise_fn     = None,
+))
 
-stone = MindStone(config=MY_CONFIG)
+echo = EchoStone(config=EchoConfig(
+    confusion_signals   = frozenset({"verstehe nicht", "nochmal", "was meinst du"}),
+    confirmation_tokens = frozenset({"ok", "verstanden", "danke", "gut"}),
+    deepen_signals      = frozenset({"also wenn", "was ware wenn", "bedeutet das"}),
+    normalise_fn        = None,
+))
 ```
 
-For languages with non-ASCII characters (Turkish, French, etc.) — provide a `normalise_fn` that strips diacritics. See [`signals_turkish.py`](signals_turkish.py) for a complete example.
+For non-ASCII languages (Turkish, French, etc.) — provide a `normalise_fn` that strips diacritics.  
+See [`signals_turkish.py`](signals_turkish.py) for a complete reference implementation.
 
 ---
 
-## API reference
+## What's coming
 
-### `MindStone(path, config, ema_alpha, min_confidence, save_every, session_gap_minutes)`
+Two more stones are in development. They're not announced yet — but here's what they're designed to solve.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `path` | `.mind_stone.json` | Profile persistence path |
-| `config` | `EN_CONFIG` | Language signal sets |
-| `ema_alpha` | `0.12` | Learning rate — lower is more stable |
-| `min_confidence` | `0.15` | Confidence threshold before directives activate |
-| `save_every` | `5` | Persist to disk every N turns |
-| `session_gap_minutes` | `30` | Gap (minutes) that marks a new session boundary; `0` disables |
-| `tech_amplifier` | `8.0` | Multiplier on tech-word ratio; higher = more sensitive to technical vocabulary |
+---
 
-### Methods
+**Bond Stone**
 
-```python
-stone.observe(user_message, assistant_message, verbose=False)
-# → None normally; dict with full signal report when verbose=True
+Every conversation has context the user never restates: the project they're building, the person they mentioned two weeks ago, the constraint they explained once and assumed you'd remember.
 
-stone.get_style_directive() -> str   # "" or 1-4 sentence directive
-stone.summary()             -> dict  # human-readable profile snapshot
-stone.session_summary()     -> dict  # v1.1: current session metadata
-stone.reset()                        # clear profile + delete file
-stone.profile                        # raw IntelligenceProfile dataclass
+Bond Stone builds a persistent, structured model of the user's world — not as raw chat history, but as a live knowledge graph that every response can silently query.
+
+*In development.*
+
+---
+
+**Intuition Stone**
+
+Experienced human assistants don't just answer the current question. They know where the conversation is going — and quietly prepare for it.
+
+Intuition Stone learns the shape of conversations: which questions lead to which follow-ups, which topics always resurface, what the user is actually trying to solve when they ask what they ask.
+
+*In development.*
+
+---
+
+When all four stones are in place, the picture looks like this:
+
+```
+Mind Stone      → the assistant speaks in a way that fits you
+Echo Stone      → the assistant knows whether it worked
+Bond Stone      → the assistant knows your world
+Intuition Stone → the assistant knows where you're going
+
+Together        → an assistant that genuinely understands you
 ```
 
-#### `observe(verbose=True)` report structure
-
-```python
-{
-    "session": {
-        "is_new":    bool,   # True when a session boundary was crossed
-        "number":    int,    # current session number (starts at 1)
-        "turn":      int,    # turn within the current session
-        "alpha_used": float, # effective EMA alpha (dampened during ramp-up)
-    },
-    "signals": {
-        "neg_verbosity":  bool,
-        "pos_verbosity":  bool,
-        "example":        bool,
-        "theory":         bool,
-        "satisfied":      bool,
-        "tech_word_count": int,
-    },
-    "profile": { ... },   # same as summary()
-}
-```
-
-#### `session_summary()` structure
-
-```python
-{
-    "session_number":        int,    # current session index
-    "current_session_turns": int,    # turns in the ongoing session
-    "minutes_since_last_turn": float,
-    "total_sessions":        int,    # all sessions ever recorded
-    "total_turns_all_time":  int,
-}
-```
-
-### `SignalConfig`
-
-```python
-@dataclass
-class SignalConfig:
-    neg_verbosity:    frozenset   # "shorter", "too long", ...
-    pos_verbosity:    frozenset   # "elaborate", "more detail", ...
-    example_signals:  frozenset   # "show me", "example", ...
-    theory_signals:   frozenset   # "why", "how does it work", ...
-    satisfied_tokens: frozenset   # "ok", "got it", "thanks", ...
-    tech_words:       frozenset   # vocabulary indicating expertise
-    normalise_fn:     callable | None
-```
+No magic. No large models. No embeddings. Just careful observation, accumulated over time.
 
 ---
 
 ## Design decisions
 
 **Why EMA instead of a counter?**  
-A simple counter weights day-1 behaviour forever. EMA ensures recent turns matter more — if a user's preferences shift, the profile adapts within ~15 turns.
+A simple counter weights day-1 behaviour forever. EMA ensures recent turns matter more — if preferences shift, the profile adapts within ~15 turns.
 
-**Why 0.12 as the default alpha?**  
-At α=0.12, a single strong signal moves the profile by ~12%, a weak signal by ~5%. This is stable enough to ignore one-off turns ("shorter" said once while in a hurry) without being so slow that it takes 100+ turns to reflect genuine preferences.
+**Why 0.12 as the default alpha for Mind Stone?**  
+At α=0.12, a single strong signal moves the profile ~12%. Stable enough to ignore one-off turns, fast enough to reflect genuine preference shifts.
 
-**Why a confidence threshold?**  
-With fewer than ~12 observations, any signal is statistically noisy. Injecting directives too early risks reinforcing a false impression. The threshold ensures the directive represents a genuine pattern.
-
-**Why session-dampened EMA? (v1.1)**  
-The first few turns of a new session often don't represent a user's real preferences — they may be rushed, testing something, or just warming up. Dampening the EMA alpha by 50% for the first 3 turns of each session prevents one atypical session from corrupting a profile built over months of data.
+**Why Jaccard similarity for rephrase detection in Echo Stone?**  
+Zero-dependency constraint rules out embeddings. Jaccard on content words (stopwords removed) is fast, interpretable, and works well for the 4–8 word messages that typically trigger rephrase detection.
 
 **Why not use embeddings or ML?**  
-Zero-dependency is a design goal. The EMA approach works well for the 4–6 dimensions that matter for communication style, runs in microseconds, and produces auditable, interpretable profiles. A black-box model would be harder to debug and overkill for this task.
-
----
-
-## Changelog
-
-### v1.2.0
-- **Thread-safe** — all public methods (`observe`, `get_style_directive`, `summary`, `session_summary`, `reset`) are protected by `threading.Lock`. Safe to share a single instance across threads (e.g. async web servers).
-- **Correct type hint** — `normalise_fn` is now typed as `Optional[Callable[[str], str]]` instead of `Optional[object]`
-- **`tech_amplifier` parameter** — replaces the hardcoded `*8` multiplier; tune sensitivity to technical vocabulary per use-case (`MindStone(tech_amplifier=5.0)`)
-- **Satisfied threshold raised** — `wc <= 4` raised to `wc <= 6`; "got it that was perfect" now correctly registers as satisfied
-- **Question detection** — `follow_up_rate` now checks for `?` and question words (`why`, `how`, `what`, …); "got it, but why?" is no longer counted as satisfied
-- **`normalise_fn` fault tolerance** — exceptions raised by `normalise_fn` are caught; observation continues with unnormalised text instead of crashing
-- Added `test_v12.py`: 30 functional tests covering all v1.2 fixes plus edge cases (corrupt JSON, I/O error on save, 500-turn drift, concurrent writes, `normalise_fn` exception)
-
-### v1.1.0
-- **Session awareness** — automatic session boundary detection (`session_gap_minutes` parameter)
-- **Session-dampened EMA** — alpha halved for the first 3 turns of a new session to prevent atypical sessions from corrupting long-term profiles
-- **`observe(verbose=True)`** — returns a structured per-turn signal report (session info, signals detected, profile snapshot)
-- **`session_summary()`** — new method returning current session number, turn count, minutes since last turn, and lifetime totals
-- **Temporal directive** — `get_style_directive()` adds a note when the user is active outside their detected peak hours
-- **`summary()`** now includes `version` and `sessions` fields
-- Backward-compatible JSON format — v1.0 profile files load without changes
-
-### v1.0.0
-- Initial release
-- EMA-based profile (verbosity, tech_depth, example_bias, follow_up_rate)
-- Persistence via JSON, `SignalConfig` for multilingual support
-- English defaults (`EN_CONFIG`) + Turkish reference implementation (`TR_CONFIG`)
+Zero-dependency is a hard design constraint. Both stones run in microseconds, produce auditable profiles, and require no model downloads or API calls. The EMA approach is sufficient for the dimensions that matter.
 
 ---
 
 ## Files
 
 ```
-mind_stone.py          core module — copy this into your project
-signals_turkish.py     Turkish signal sets (reference implementation)
-example.py             basic, v1.1, OpenAI, and Turkish usage examples
-test_v11.py            v1.1 functional test suite (16 tests)
-test_v12.py            v1.2 functional test suite (30 tests)
+mind_stone.py          Mind Stone core module
+echo_stone.py          Echo Stone core module
+signals_turkish.py     Turkish signal sets (reference implementation for both stones)
+example.py             Usage examples
+test_v11.py            Mind Stone v1.1 test suite (16 tests)
+test_v12.py            Mind Stone v1.2 test suite (30 tests)
 ```
 
 ---
@@ -305,10 +362,11 @@ Python 3.9+. No third-party packages.
 
 ## Contributing
 
-Signal sets for more languages are very welcome. Copy `signals_turkish.py`, adapt the frozensets for your language, and open a pull request.
+Signal sets for more languages are very welcome.  
+Copy `signals_turkish.py`, adapt the frozensets for your language, and open a pull request.
 
 ---
 
 ## License
 
-MIT — free to use, modify, and distribute in personal and commercial projects.
+MIT — free to use, modify, and distribute.
