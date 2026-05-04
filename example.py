@@ -2,13 +2,14 @@
 Mind Stone — Usage Examples
 ===========================
 
-Three examples, increasing complexity:
+Four examples, increasing complexity:
   1. Basic usage (no LLM required)
-  2. OpenAI integration
-  3. Turkish language configuration (shows multilingual support)
+  2. v1.1 features — session awareness and verbose observe
+  3. OpenAI integration
+  4. Turkish language configuration (shows multilingual support)
 
 All code, comments, and output are in English.
-Example 3 contains Turkish conversation strings — these are the actual
+Example 4 contains Turkish conversation strings — these are the actual
 user messages in a Turkish-language assistant, included to demonstrate
 that signal detection works across languages. The profile output is
 always in English regardless of input language.
@@ -79,7 +80,96 @@ def example_basic():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Example 2 — OpenAI integration
+# Example 2 — v1.1 features: session awareness + verbose observe
+# ──────────────────────────────────────────────────────────────────────────────
+
+def example_v11():
+    """Demonstrate Mind Stone v1.1 session-awareness features.
+
+    v1.1 adds:
+      - Automatic session boundary detection (gap > session_gap_minutes)
+      - Dampened EMA for the first few turns of a new session, so one
+        atypical session doesn't corrupt a long-term profile
+      - verbose=True in observe() returns a per-turn signal report
+      - session_summary() returns structured session metadata
+      - Temporal directive: note when user is active outside their peak hours
+    """
+    print("=== Example 2: v1.1 session awareness ===\n")
+
+    # session_gap_minutes=30 — a gap longer than 30 min starts a new session
+    stone = MindStone(path=".v11_demo_profile.json", session_gap_minutes=30)
+
+    # ── Session 1 — user is in "explain everything" mode ──────────────────────
+    session1 = [
+        ("Explain how Python's GIL works in detail",
+         "The Global Interpreter Lock (GIL) is a mutex that protects CPython's "
+         "internal state. It means only one thread executes Python bytecode at a "
+         "time, even on multi-core machines. For CPU-bound code this is a serious "
+         "limitation — use multiprocessing instead. For I/O-bound code threads "
+         "still help because the GIL is released during I/O waits."),
+        ("Elaborate on that, give me the internals",
+         "At the C level, the GIL is a C mutex (PyThread_type_lock). It is "
+         "released every sys.getswitchinterval() seconds (default 5 ms) to allow "
+         "other threads to run. In CPython 3.12+ the GIL is per-interpreter, "
+         "enabling true parallelism with sub-interpreters."),
+        ("Tell me more about sub-interpreters",
+         "Sub-interpreters (PEP 554 / PEP 734) allow multiple independent Python "
+         "runtimes within one process, each with its own GIL. Communication "
+         "happens via channels that pass immutable data."),
+    ]
+
+    print("Session 1 — verbose observe output for each turn:\n")
+    for user_msg, assistant_msg in session1:
+        report = stone.observe(user_msg, assistant_msg, verbose=True)
+        sess   = report["session"]
+        sigs   = report["signals"]
+        print(f"  Turn {sess['turn']:>2}  |  session #{sess['number']}"
+              f"  |  alpha={sess['alpha_used']:.3f}"
+              f"  |  signals detected: {[k for k,v in sigs.items() if v]}")
+
+    print()
+
+    # ── Simulate a 35-minute gap (start of a new session) ────────────────────
+    # In production this happens naturally; here we fake it for the demo.
+    stone.profile.last_observe_ts -= 35 * 60   # wind clock back 35 minutes
+
+    # ── Session 2 — user is rushed, wants short answers ───────────────────────
+    session2 = [
+        ("too long, shorter please", "OK."),
+        ("just show code",           "```python\nimport threading\n```"),
+        ("got it",                   "Done."),
+    ]
+
+    print("Session 2 — user returns after 35-min gap:\n")
+    for user_msg, assistant_msg in session2:
+        report = stone.observe(user_msg, assistant_msg, verbose=True)
+        sess   = report["session"]
+        sigs   = report["signals"]
+        new    = " [NEW SESSION]" if sess["is_new"] else ""
+        print(f"  Turn {sess['turn']:>2}  |  session #{sess['number']}{new}"
+              f"  |  alpha={sess['alpha_used']:.3f}"
+              f"  |  signals detected: {[k for k,v in sigs.items() if v]}")
+
+    print()
+
+    # ── session_summary() ─────────────────────────────────────────────────────
+    print("session_summary() output:")
+    for key, val in stone.session_summary().items():
+        print(f"  {key:<30} {val}")
+
+    print()
+
+    # ── Full profile summary ──────────────────────────────────────────────────
+    print("Full profile summary():")
+    for key, val in stone.summary().items():
+        print(f"  {key:<22} {val}")
+
+    stone.reset()
+    print()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Example 3 — OpenAI integration
 # ──────────────────────────────────────────────────────────────────────────────
 
 def example_openai():
@@ -94,16 +184,16 @@ def example_openai():
     try:
         from openai import OpenAI
     except ImportError:
-        print("=== Example 2: OpenAI (skipped — openai not installed) ===\n")
+        print("=== Example 3: OpenAI (skipped — openai not installed) ===\n")
         return
 
     import os
     api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
-        print("=== Example 2: OpenAI (skipped — OPENAI_API_KEY not set) ===\n")
+        print("=== Example 3: OpenAI (skipped — OPENAI_API_KEY not set) ===\n")
         return
 
-    print("=== Example 2: OpenAI integration ===\n")
+    print("=== Example 3: OpenAI integration ===\n")
 
     client = OpenAI(api_key=api_key)
     stone  = MindStone(path=".openai_demo_profile.json")
@@ -162,7 +252,7 @@ def example_openai():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Example 3 — Turkish language configuration
+# Example 4 — Turkish language configuration
 # ──────────────────────────────────────────────────────────────────────────────
 
 def example_turkish():
@@ -180,7 +270,7 @@ def example_turkish():
     To adapt Mind Stone for any language, you only need to provide a
     SignalConfig with translated signal sets — see signals_turkish.py.
     """
-    print("=== Example 3: Turkish language configuration ===")
+    print("=== Example 4: Turkish language configuration ===")
     print("    (Turkish inputs, English profile output)\n")
 
     from signals_turkish import TR_CONFIG
@@ -229,5 +319,6 @@ def example_turkish():
 
 if __name__ == "__main__":
     example_basic()
+    example_v11()
     example_openai()
     example_turkish()

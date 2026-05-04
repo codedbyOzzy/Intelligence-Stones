@@ -145,12 +145,12 @@ Mind Stone ships with English signals. Use another language by passing a `Signal
 from mind_stone import MindStone, SignalConfig
 
 MY_CONFIG = SignalConfig(
-    neg_verbosity    = frozenset({"kürzer", "zu lang", "fass dich"}),      # German: shorter
-    pos_verbosity    = frozenset({"mehr details", "erklar mir", "weiter"}), # German: more
+    neg_verbosity    = frozenset({"kurzer", "zu lang", "fass dich"}),       # German: shorter
+    pos_verbosity    = frozenset({"mehr details", "erklar mir", "weiter"}),  # German: more
     example_signals  = frozenset({"beispiel", "zeig mir", "code"}),
     theory_signals   = frozenset({"warum", "wie funktioniert", "erklare"}),
     satisfied_tokens = frozenset({"ok", "danke", "verstanden", "gut"}),
-    tech_words       = frozenset({"python", "api", "docker", "gpu", ...}),
+    tech_words       = frozenset({"python", "api", "docker", "gpu"}),
     normalise_fn     = None,   # German uses ASCII — no normalisation needed
 )
 
@@ -163,7 +163,7 @@ For languages with non-ASCII characters (Turkish, French, etc.) — provide a `n
 
 ## API reference
 
-### `MindStone(path, config, ema_alpha, min_confidence, save_every)`
+### `MindStone(path, config, ema_alpha, min_confidence, save_every, session_gap_minutes)`
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -172,15 +172,53 @@ For languages with non-ASCII characters (Turkish, French, etc.) — provide a `n
 | `ema_alpha` | `0.12` | Learning rate — lower is more stable |
 | `min_confidence` | `0.15` | Confidence threshold before directives activate |
 | `save_every` | `5` | Persist to disk every N turns |
+| `session_gap_minutes` | `30` | Gap (minutes) that marks a new session boundary; `0` disables |
 
 ### Methods
 
 ```python
-stone.observe(user_message, assistant_message)  # learn from a turn
-stone.get_style_directive() -> str              # "" or 1-4 sentence directive
-stone.summary()             -> dict             # human-readable profile
-stone.reset()                                   # clear profile + delete file
-stone.profile               # raw IntelligenceProfile dataclass
+stone.observe(user_message, assistant_message, verbose=False)
+# → None normally; dict with full signal report when verbose=True
+
+stone.get_style_directive() -> str   # "" or 1-4 sentence directive
+stone.summary()             -> dict  # human-readable profile snapshot
+stone.session_summary()     -> dict  # v1.1: current session metadata
+stone.reset()                        # clear profile + delete file
+stone.profile                        # raw IntelligenceProfile dataclass
+```
+
+#### `observe(verbose=True)` report structure
+
+```python
+{
+    "session": {
+        "is_new":    bool,   # True when a session boundary was crossed
+        "number":    int,    # current session number (starts at 1)
+        "turn":      int,    # turn within the current session
+        "alpha_used": float, # effective EMA alpha (dampened during ramp-up)
+    },
+    "signals": {
+        "neg_verbosity":  bool,
+        "pos_verbosity":  bool,
+        "example":        bool,
+        "theory":         bool,
+        "satisfied":      bool,
+        "tech_word_count": int,
+    },
+    "profile": { ... },   # same as summary()
+}
+```
+
+#### `session_summary()` structure
+
+```python
+{
+    "session_number":        int,    # current session index
+    "current_session_turns": int,    # turns in the ongoing session
+    "minutes_since_last_turn": float,
+    "total_sessions":        int,    # all sessions ever recorded
+    "total_turns_all_time":  int,
+}
 ```
 
 ### `SignalConfig`
@@ -210,8 +248,30 @@ At α=0.12, a single strong signal moves the profile by ~12%, a weak signal by ~
 **Why a confidence threshold?**  
 With fewer than ~12 observations, any signal is statistically noisy. Injecting directives too early risks reinforcing a false impression. The threshold ensures the directive represents a genuine pattern.
 
+**Why session-dampened EMA? (v1.1)**  
+The first few turns of a new session often don't represent a user's real preferences — they may be rushed, testing something, or just warming up. Dampening the EMA alpha by 50% for the first 3 turns of each session prevents one atypical session from corrupting a profile built over months of data.
+
 **Why not use embeddings or ML?**  
 Zero-dependency is a design goal. The EMA approach works well for the 4–6 dimensions that matter for communication style, runs in microseconds, and produces auditable, interpretable profiles. A black-box model would be harder to debug and overkill for this task.
+
+---
+
+## Changelog
+
+### v1.1.0
+- **Session awareness** — automatic session boundary detection (`session_gap_minutes` parameter)
+- **Session-dampened EMA** — alpha halved for the first 3 turns of a new session to prevent atypical sessions from corrupting long-term profiles
+- **`observe(verbose=True)`** — returns a structured per-turn signal report (session info, signals detected, profile snapshot)
+- **`session_summary()`** — new method returning current session number, turn count, minutes since last turn, and lifetime totals
+- **Temporal directive** — `get_style_directive()` adds a note when the user is active outside their detected peak hours
+- **`summary()`** now includes `version` and `sessions` fields
+- Backward-compatible JSON format — v1.0 profile files load without changes
+
+### v1.0.0
+- Initial release
+- EMA-based profile (verbosity, tech_depth, example_bias, follow_up_rate)
+- Persistence via JSON, `SignalConfig` for multilingual support
+- English defaults (`EN_CONFIG`) + Turkish reference implementation (`TR_CONFIG`)
 
 ---
 
@@ -220,7 +280,8 @@ Zero-dependency is a design goal. The EMA approach works well for the 4–6 dime
 ```
 mind_stone.py          core module — copy this into your project
 signals_turkish.py     Turkish signal sets (reference implementation)
-example.py             basic, OpenAI, and Turkish usage examples
+example.py             basic, v1.1, OpenAI, and Turkish usage examples
+test_v11.py            v1.1 functional test suite (16 tests)
 ```
 
 ---
