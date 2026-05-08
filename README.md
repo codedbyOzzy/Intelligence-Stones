@@ -2,7 +2,7 @@
 
 > *"Most AI assistants know what to say. These teach them how to say it — and whether it actually landed."*
 
-A growing collection of lightweight, zero-dependency Python modules that give AI assistants genuine understanding of the people they talk to.
+A collection of lightweight, zero-dependency Python modules that give AI assistants genuine understanding of the people they talk to.
 
 Each stone is a standalone drop-in. No framework. No configuration. No external dependencies.  
 Together, they build something more complete.
@@ -15,8 +15,18 @@ Together, they build something more complete.
 |-------|--------|----------------|
 | [**Mind Stone**](#-mind-stone) | `v1.2.0` ✅ | *How* the user communicates — style, depth, pace |
 | [**Echo Stone**](#-echo-stone) | `v1.0.0` ✅ | *Whether* the user actually understood |
-| [**Bond Stone**](#bond-stone) | 🔒 in development | *Who* the user is — their world, context, history |
-| [**Intuition Stone**](#intuition-stone) | 🔒 in development | *Where* the conversation is going |
+| [**Bond Stone**](#bond-stone) | `active` ⚡ | *Who* the user is — their world, context, history |
+| [**Intuition Stone**](#intuition-stone) | `active` ⚡ | *Where* the conversation is going |
+
+> **Bond Stone** and **Intuition Stone** are in active production use inside [FRIDAY Synapse](https://github.com/codedbyOzzy/ProjectFRIDAY). Standalone public releases are in progress.
+
+---
+
+## Used in Production
+
+The complete four-stone system powers **[FRIDAY Synapse](https://github.com/codedbyOzzy/ProjectFRIDAY)** — a Windows-native desktop AI system with persistent memory, real voice interaction, and deep OS-level integration.
+
+All four stones run on every conversation turn inside FRIDAY Synapse, forming the adaptive cognitive layer that makes the system feel different from a standard LLM wrapper.
 
 ---
 
@@ -39,7 +49,7 @@ or not.                             difference between "got it" and
                                     "got it" (but didn't).
 
 Every session starts from zero.     Bond Stone — builds a persistent
-You re-explain your project, your   knowledge graph of your world.
+You re-explain your project, your   model of your world across sessions.
 stack, your constraints — every     Remembers without being told to
 single time.                        remember.
 
@@ -81,7 +91,7 @@ When all four stones are active, the assistant operates on four layers simultane
 
 ```
   ┌──────────────────────────────────────────────────────────┐
-  │  Layer 1 — Expression  (released)                        │
+  │  Layer 1 — Expression                                    │
   │                                                          │
   │  Mind Stone      How to speak to you                     │
   │  Echo Stone      Whether it worked                       │
@@ -89,7 +99,7 @@ When all four stones are active, the assistant operates on four layers simultane
   │  Together: a delivery system that calibrates and         │
   │  validates itself with every turn.                       │
   ├──────────────────────────────────────────────────────────┤
-  │  Layer 2 — Context  (in development)                     │
+  │  Layer 2 — Context                                       │
   │                                                          │
   │  Bond Stone      Who you are — your world, projects,     │
   │                  people, constraints, history            │
@@ -98,7 +108,7 @@ When all four stones are active, the assistant operates on four layers simultane
   │  With it, the assistant already knows what you mean      │
   │  when you say "the usual setup" or "that API problem".   │
   ├──────────────────────────────────────────────────────────┤
-  │  Layer 3 — Prediction  (in development)                  │
+  │  Layer 3 — Prediction                                    │
   │                                                          │
   │  Intuition Stone Where this conversation is going        │
   │                                                          │
@@ -397,9 +407,7 @@ See [`signals_turkish.py`](signals_turkish.py) for a complete reference implemen
 
 ---
 
-## What's coming
-
-### Bond Stone
+## Bond Stone
 
 Right now, every session starts from zero. You mention "the Vision project" and the assistant has no idea what that is — even though you explained it three sessions ago. You say "the usual setup" and it asks you to clarify. You state your constraints once and then have to repeat them forever.
 
@@ -407,11 +415,11 @@ Bond Stone solves this by building a persistent, structured model of the user's 
 
 The difference between Bond Stone and simply saving chat history is the difference between a notebook and a map. Chat history stores what was said. Bond Stone builds what it means — who the people are, what the projects involve, how the pieces connect. When you say "same thing as before", it actually knows what that means.
 
-*In development.*
+**Status:** Active in [FRIDAY Synapse](https://github.com/codedbyOzzy/ProjectFRIDAY). Standalone public release in progress.
 
 ---
 
-### Intuition Stone
+## Intuition Stone
 
 A capable human assistant doesn't just answer the question in front of them. They recognise patterns. They know that when a developer asks *this kind of question*, they'll need *this* next — and they quietly prepare for it before being asked.
 
@@ -419,11 +427,11 @@ Intuition Stone learns the shape of conversations. It tracks which questions ten
 
 This isn't about predicting the future. It's about recognising that most conversations follow familiar arcs — and that an assistant who has seen enough of them can stop waiting to be asked.
 
-*In development.*
+**Status:** Active in [FRIDAY Synapse](https://github.com/codedbyOzzy/ProjectFRIDAY). Standalone public release in progress.
 
 ---
 
-### The complete picture
+## The complete picture
 
 ```
 Mind Stone      →  the assistant speaks in a way that fits you
@@ -463,8 +471,8 @@ Zero-dependency is a hard design constraint. Both stones run in microseconds, pr
 ## Files
 
 ```
-mind_stone.py          Mind Stone core module
-echo_stone.py          Echo Stone core module
+mind_stone.py          Mind Stone core module (v1.2.0)
+echo_stone.py          Echo Stone core module (v1.0.0)
 signals_turkish.py     Turkish signal sets for both stones
 example.py             Usage examples
 test_v11.py            Mind Stone v1.1 test suite (16 tests)
